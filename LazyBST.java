@@ -1,10 +1,12 @@
 import java.util.ArrayList;
-import java.util.Stack;
 
-public class LazyBST<T extends Comparable<? super T>> extends BinarySearchTree<T> {
+public class LazyBST<T extends Comparable<? super T>> {
     protected Entry<T> root;
+    protected int size;
 
     public LazyBST() {
+        root = null;
+        size = 0;
     }
 
     public int getSize() {
@@ -25,7 +27,7 @@ public class LazyBST<T extends Comparable<? super T>> extends BinarySearchTree<T
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append(root.element);
+        sb.append(root.element).append(" (s: ").append(root.size).append(", h: ").append(root.height).append(")");
 
         String pointerRight = "└──";
         String pointerLeft = (root.right != null) ? "├──" : "└──";
@@ -42,7 +44,7 @@ public class LazyBST<T extends Comparable<? super T>> extends BinarySearchTree<T
             sb.append("\n");
             sb.append(padding);
             sb.append(pointer);
-            sb.append(node.element);
+            sb.append(node.element).append(" (s: ").append(node.size).append(", h: ").append(node.height).append(")");
 
             StringBuilder paddingBuilder = new StringBuilder(padding);
             if (hasRightSibling) {
@@ -60,18 +62,6 @@ public class LazyBST<T extends Comparable<? super T>> extends BinarySearchTree<T
         }
     }
 
-    protected void printTree(Entry<T> e) {
-
-        System.out.println(e.element.toString());
-        System.out.println(e.size + " element(s)");
-        if (e.left != null) {
-            printTree(e.left);
-        }
-        if (e.right != null) {
-            printTree(e.right);
-        }
-    }
-
     public void insert(T x) {
         if (root == null) {
             if (x == null)
@@ -84,10 +74,8 @@ public class LazyBST<T extends Comparable<? super T>> extends BinarySearchTree<T
             int comp;
 
             while (true) {
-                temp.size++;
                 comp = x.compareTo(temp.element);
                 if (comp == 0) {
-                    temp.size--;
                     System.out.println("Word already in dictionary");
                     reduceSizes(temp);
                 }
@@ -96,19 +84,20 @@ public class LazyBST<T extends Comparable<? super T>> extends BinarySearchTree<T
                         temp = temp.left;
                     } else {
                         temp.left = new Entry<>(x, temp);
-                        size++;
+                        updateInfo(temp, temp.right == null);
+                        handleRebalance(temp);
                         break;
                     } // temp.left == null
                 else if (temp.right != null) {
                     temp = temp.right;
                 } else {
                     temp.right = new Entry<>(x, temp);
-                    size++;
+                    updateInfo(temp, temp.left == null);
+                    handleRebalance(temp);
                     break;
                 } // temp.right == null
             } // while
         } // root not null
-        handleRebalance();
     }
 
     public Entry<T> find(T x) {
@@ -127,6 +116,34 @@ public class LazyBST<T extends Comparable<? super T>> extends BinarySearchTree<T
                 e = e.right;
         } // while
         return e;
+    }
+
+    public void updateInfo(Entry<T> x, boolean updateHeight) {
+        // while (x.parent != null) {
+        // x.size = (x.left != null ? x.left.size : 0) + (x.right != null ? x.right.size
+        // : 0);
+        // if (updateHeight)
+        // x.height = Math.max(x.left != null ? x.left.height : 0, x.right != null ?
+        // x.right.height : 0) + 1;
+        // x = x.parent;
+        // }
+        // x.size += inc;
+        // if (updateHeight)
+        // x.height = Math.max(x.left != null ? x.left.height : 0, x.right != null ?
+        // x.right.height : 0) + 1;
+
+        while (x != null) {
+            x.size = (x.left != null ? x.left.size : 0) + (x.right != null ? x.right.size : 0) + 1;
+            if (updateHeight) {
+                int newHeight = Math.max(
+                        x.left != null ? x.left.height : -1,
+                        x.right != null ? x.right.height : -1) + 1;
+                if (newHeight == x.height)
+                    break; // Height unchanged, stop
+                x.height = newHeight;
+            }
+            x = x.parent;
+        }
     }
 
     public T remove(T x) {
@@ -171,11 +188,12 @@ public class LazyBST<T extends Comparable<? super T>> extends BinarySearchTree<T
                 p.parent.right = null;
         } // p has a parent but no children
         reduceSizes(p);
-        handleRebalance();
+        // handleRebalance();
         return p.element;
     } // method deleteEntry
 
     protected void reduceSizes(Entry<T> p) {
+        p.size--;
         Entry<T> parent = p.parent;
         while (parent != null) {
             parent.size--;
@@ -208,90 +226,93 @@ public class LazyBST<T extends Comparable<? super T>> extends BinarySearchTree<T
         } // e has no right child
     } // method successor
 
-    protected void handleRebalance() {
-        Entry<T> rebalance = shouldRebalance(this.root);
-        if (rebalance != null) {
-            // print(this.root);
-            if (rebalance.parent == null) {
-                this.root = rebalance(rebalance);
-            } else {
-                int c = rebalance.element.compareTo(rebalance.parent.element);
-                if (c < 0) {
-                    rebalance.parent.left = rebalance(rebalance);
+    protected void handleRebalance(Entry<T> x) {
+        Entry<T> node = nodeToRebalance(x);
+        if (node != null) {
+            Entry<T> parent = node.parent;
+            node = rebalance(node);
+            if (parent != null) {
+                if (node.element.compareTo(parent.element) < 0) {
+                    parent.left = node;
                 } else {
-                    rebalance.parent.right = rebalance(rebalance);
+                    parent.right = node;
                 }
+                updateInfo(parent, true);
+            } else {
+                root = node;
             }
-            // print(this.root);
         }
     }
 
-    protected Entry<T> shouldRebalance(Entry<T> x) {
-        if (x.getHeight() <= 3) {
-            return null;
+    protected Entry<T> nodeToRebalance(Entry<T> x) {
+        Entry<T> prev;
+        while (x.parent != null) {
+            prev = x;
+            x = x.parent;
+            if (x.height <= 3) {
+                continue;
+            }
+            if (!outOfBalance(x) && outOfBalance(prev)) {
+                return prev;
+            }
         }
-        int leftSize = x.left != null ? x.left.size : 0;
-        int rightSize = x.right != null ? x.right.size : 0;
-        if (leftSize * 2 <= rightSize
-                || leftSize >= rightSize * 2) {
-            // System.out.println(x.element + " - L: " + leftSize + " R: " + rightSize);
+        if (outOfBalance(x) && x.height > 3) {
             return x;
         }
-        Entry<T> left = x.left != null ? shouldRebalance(x.left) : null;
-        Entry<T> right = x.right != null ? shouldRebalance(x.right) : null;
-        if (left != null) {
-            return left;
-        } else {
-            return right;
-        }
+        return null;
+    }
+
+    protected boolean outOfBalance(Entry<T> x) {
+        return ((x.left != null ? x.left.size * 2 : 0) <= (x.right != null ? x.right.size : 0)
+                || (x.left != null ? x.left.size : 0) >= (x.right != null ? x.right.size * 2 : 0));
     }
 
     protected Entry<T> rebalance(Entry<T> x) {
         ArrayList<Entry<T>> items = new ArrayList<>(x.size);
-        Stack<Entry<T>> s = new Stack<>();
-        Entry<T> curr = x;
-
-        while (curr != null || !s.isEmpty()) {
-            while (curr != null) {
-                s.push(curr);
-                curr = curr.left;
-            }
-            curr = s.pop();
-            items.add(curr);
-            curr = curr.right;
-        }
-
-        items.sort((a, b) -> {
-            return a.element.compareTo(b.element);
-        });
-        // items.forEach(j -> System.out.print(j.element + " "));
-        // System.out.println();
-
+        nodeToArray(x, items);
         return refactorNodes(items, x.parent);
     }
 
-    protected Entry<T> refactorNodes(ArrayList<Entry<T>> l, Entry<T> parent) {
-        int middle = (l.size() - 1) / 2;
-        Entry<T> temp = new Entry<>(l.get(middle).element, parent);
-        if (l.size() > 2) {
-            Entry<T> left = refactorNodes(new ArrayList<>(l.subList(0, middle)), temp);
-            Entry<T> right = refactorNodes(new ArrayList<>(l.subList(middle + 1, l.size())), temp);
+    protected void nodeToArray(Entry<T> x, ArrayList<Entry<T>> a) {
+        if (x.left != null)
+            nodeToArray(x.left, a);
+        a.add(x);
+        if (x.right != null)
+            nodeToArray(x.right, a);
+    }
+
+    protected Entry<T> refactorNodes(ArrayList<Entry<T>> x, Entry<T> parent) {
+        int middle = (x.size() - 1) / 2;
+        Entry<T> temp = resetNode(x.get(middle), parent);
+        if (x.size() > 2) {
+            Entry<T> left = refactorNodes(new ArrayList<>(x.subList(0, middle)), temp);
+            Entry<T> right = refactorNodes(new ArrayList<>(x.subList(middle + 1, x.size())), temp);
             temp.left = left;
             temp.right = right;
-            temp.size = 1 + temp.left.size + temp.right.size;
+            updateInfo(temp, true);
             return temp;
-        } else if (l.size() == 2) {
-            temp.right = new Entry<>(l.get(1).element, temp);
-            temp.size = 2;
+        } else if (x.size() == 2) {
+            temp.right = resetNode(x.get(1), temp);
+            updateInfo(temp, temp.left == null);
             return temp;
         } else {
             return temp;
         }
+    }
+
+    protected Entry<T> resetNode(Entry<T> x, Entry<T> parent) {
+        x.parent = parent;
+        x.left = null;
+        x.right = null;
+        x.height = 0;
+        x.size = 1;
+        return x;
     }
 
     protected static class Entry<T> {
         protected T element;
         protected int size = 1;
+        protected int height = 0;
 
         protected Entry<T> left = null,
                 right = null,
